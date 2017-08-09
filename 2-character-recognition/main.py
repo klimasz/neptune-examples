@@ -9,8 +9,51 @@ from keras.layers import Dense, Activation, Flatten
 from keras.layers import Conv2D, MaxPool2D, Dropout
 from keras.callbacks import Callback, TensorBoard
 
-
 from deepsense import neptune
+
+
+def array_2d_to_image(array, autorescale=True):
+    assert array.min() >= 0
+    assert len(array.shape) == 2
+    if array.max() <= 1 and autorescale:
+        array = 255 * array
+    array = array.astype('uint8')
+    return Image.fromarray(array)
+
+
+class NeptuneCallback(Callback):
+    def __init__(self, images_per_epoch=-1):
+        self.epoch_id = 0
+        self.images_per_epoch = images_per_epoch
+
+    def on_epoch_end(self, epoch, logs={}):
+        self.epoch_id += 1
+
+        # logging numeric channels
+        ctx.job.channel_send('Log-loss training', self.epoch_id, logs['loss'])
+        ctx.job.channel_send('Log-loss validation', self.epoch_id, logs['val_loss'])
+        ctx.job.channel_send('Accuracy training', self.epoch_id, logs['acc'])
+        ctx.job.channel_send('Accuracy validation', self.epoch_id, logs['val_acc'])
+
+        # Predict the digits for images of the test set.
+        validation_predictions = model.predict_classes(X_test)
+        scores = model.predict(X_test)
+
+        # Identify the incorrectly classified images and send them to Neptune Dashboard.
+        image_per_epoch = 0
+        for index, (prediction, actual) in enumerate(zip(validation_predictions, Y_test.argmax(axis=1))):
+            if prediction != actual:
+                if image_per_epoch == self.images_per_epoch:
+                    break
+                image_per_epoch += 1
+
+                ctx.job.channel_send('false_predictions', neptune.Image(
+                    name='[{}] pred: {} true: {}'.format(self.epoch_id, letters[prediction], letters[actual]),
+                    description="\n".join([
+                        "{} {:5.1f}% {}".format(letters[i], 100 * score, "!!!" if i == actual else "")
+                        for i, score in enumerate(scores[index])]),
+                    data=array_2d_to_image(X_test[index,:,:,0])))
+
 
 data = io.loadmat("/input/notMNIST_small.mat")
 X = data['images']
@@ -65,46 +108,3 @@ model.fit(X_train, Y_train,
           validation_data=(X_test, Y_test),
           verbose=2,
           callbacks=[NeptuneCallback(images_per_epoch=20)])
-
-
-class NeptuneCallback(Callback):
-    def __init__(self, images_per_epoch=-1):
-        self.epoch_id = 0
-        self.images_per_epoch = images_per_epoch
-
-    def on_epoch_end(self, epoch, logs={}):
-        self.epoch_id += 1
-
-        # logging numeric channels
-        ctx.job.channel_send('Log-loss training', self.epoch_id, logs['loss'])
-        ctx.job.channel_send('Log-loss validation', self.epoch_id, logs['val_loss'])
-        ctx.job.channel_send('Accuracy training', self.epoch_id, logs['acc'])
-        ctx.job.channel_send('Accuracy validation', self.epoch_id, logs['val_acc'])
-
-        # Predict the digits for images of the test set.
-        validation_predictions = model.predict_classes(X_test)
-        scores = model.predict(X_test)
-
-        # Identify the incorrectly classified images and send them to Neptune Dashboard.
-        image_per_epoch = 0
-        for index, (prediction, actual) in enumerate(zip(validation_predictions, Y_test.argmax(axis=1))):
-            if prediction != actual:
-                if image_per_epoch == self.images_per_epoch:
-                    break
-                image_per_epoch += 1
-
-                ctx.job.channel_send('false_predictions', neptune.Image(
-                    name='[{}] pred: {} true: {}'.format(self.epoch_id, letters[prediction], letters[actual]),
-                    description="\n".join([
-                        "{} {:5.1f}% {}".format(letters[i], 100 * score, "!!!" if i == actual else "")
-                        for i, score in enumerate(scores[index])],
-                        data=array_2d_to_image(X_test[index,:,:,0]))))
-
-
-def array_2d_to_image(array, autorescale=True):
-    assert array.min() >= 0
-    assert len(array.shape) == 2
-    if array.max() <= 1 and autorescale:
-        array = 255 * array
-    array = array.astype('uint8')
-    return Image.fromarray(array)
