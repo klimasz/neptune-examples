@@ -16,36 +16,32 @@ def _change_content_style_balance_handler(csb):
 ctx.job.register_action(name='Change content/style balance', handler=_change_content_style_balance_handler)
 
 
-def thumbnail(img, new_size=300):
-    img_PIL_bgr = Image.fromarray(img)
-    b, g, r = img_PIL_bgr.split()
-    img_PIL = Image.merge("RGB", (r, g, b))
-    shrink_ratio = new_size / float(max(img.shape[:2]))
-    if shrink_ratio < 1:
-        thumbnail_size = int(round(shrink_ratio * img.shape[0])), int(round(shrink_ratio * img.shape[0]))
-        img_PIL.thumbnail(thumbnail_size, Image.ANTIALIAS)
-    return img_PIL
+def pil_to_arr(img):
+    arr = np.array(img).astype(np.float32)[:,:,::-1]
+    return np.expand_dims(arr, 0)
 
 
-# Reads images and scales them to the allowed size.
+def arr_to_pil(arr):
+    img_bgr = Image.fromarray(arr)
+    b, g, r = img_bgr.split()
+    return Image.merge("RGB", (r, g, b))
+
+
 def read_images(path_to_content, path_to_style, max_axis_size):
     content = Image.open(path_to_content)
+    content.thumbnail((max_axis_size, max_axis_size), Image.ANTIALIAS)
+
     style = Image.open(path_to_style)
+    style = style.resize(content.size, Image.ANTIALIAS)
 
-    shape = content.size[0], content.size[1]
-    if max(shape) > max_axis_size:
-        ratio = max_axis_size/float(max(shape))
-        shape = int(round(shape[0]*ratio)), int(round(shape[1]*ratio))
-        content = content.resize(shape, Image.ANTIALIAS)
-    style = style.resize(shape, Image.ANTIALIAS)
+    return pil_to_arr(content), pil_to_arr(style)
 
-    content = np.array(content).astype(np.float32)[:,:,::-1]
-    style = np.array(style).astype(np.float32)[:,:,::-1]
 
-    content = np.expand_dims(content, 0)
-    style = np.expand_dims(style, 0)
-
-    return content, style
+def read_image(path, size):
+    img = Image.open(path)
+    img.thumbnail(size, Image.ANTIALIAS)
+    img_arr = np.array(img).astype(np.float32)[:,:,::-1]
+    return np.expand_dims(img_arr, 0)
 
 
 # Retrieves image to the printable form.
@@ -53,7 +49,7 @@ def retrieve(img):
     img = np.squeeze(img, axis=(0,))
     img += [103.939, 116.779, 123.68]
     img = np.clip(img.round(), 0, 255).astype(np.uint8)
-    return img
+    return arr_to_pil(img)
 
 
 # Definition of the convolutional layer.
@@ -189,33 +185,38 @@ def transfer_style(stats, img):
     vgg16 = tf.train.Saver(tf.global_variables()[1:27])
 
     cfg = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
+
     with tf.Session(config=cfg) as sess:
         sess.run(tf.global_variables_initializer())
         vgg16.restore(sess, ctx.params.path_to_model)
+
         for step in xrange(ctx.params.number_of_iterations):
-            _, l, ls, lc = sess.run([train_op, loss, loss_style, loss_content],
-                                    feed_dict={content_style_balance_param: content_style_balance})
+            _, l, ls, lc = sess.run(
+                [train_op, loss, loss_style, loss_content],
+                feed_dict={content_style_balance_param: content_style_balance})
+
             if step % 10 == 0:
                 ctx.job.channel_send('loss', step, l)
-                ctx.job.channel_send('loss_style', step, ls)
+                ctx.job.channel_send('loss style', step, ls)
                 ctx.job.channel_send('loss content', step, lc)
                 ctx.job.channel_send('content/style balance', step, content_style_balance)
-                if step % 100 == 0:
-                    img = retrieve(sess.run(image))
-                    ctx.job.channel_send(
-                        'channel_image', step,
-                        neptune.Image(name=step, description=step, data=thumbnail(img)))
-        img = retrieve(sess.run(image))
-        img.save('/output/final.jpg')
-        ctx.job.channel_send(
-            'channel_image', ctx.params.number_of_iterations,
-            neptune.Image(name='final', description='final', data=thumbnail(img)))
+
+                retrieved = retrieve(sess.run(image))
+                retrieved.thumbnail((300, 300), Image.ANTIALIAS)
+                ctx.job.channel_send(
+                    'image_channel', step,
+                    neptune.Image(name=step, description=step, data=retrieved))
+
+        final = retrieve(sess.run(image))
+        final.save('/output/final.jpg')
 
 
 def main():
-    content, style = read_images(ctx.params.path_to_images + ctx.params.content,
-                                 ctx.params.path_to_images + ctx.params.style,
-                                 ctx.params.max_img_size)
+    content, style = read_images(
+        ctx.params.path_to_images + ctx.params.content,
+        ctx.params.path_to_images + ctx.params.style,
+        ctx.params.max_img_size)
+
     stats = get_stats(content, style)
     transfer_style(stats, content)
 
