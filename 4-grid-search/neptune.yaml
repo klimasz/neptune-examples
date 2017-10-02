@@ -1,4 +1,1 @@
-parameters:
-    max_depth: {default: 8}
-    n_estimators: {default: 4}
 metric: {channel: mse, goal: minimize}

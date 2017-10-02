@@ -1,3 +1,5 @@
+import argparse
+
 import numpy as np
 import tensorflow as tf
 from PIL import Image
@@ -7,8 +9,24 @@ from deepsense import neptune
 
 ctx = neptune.Context()
 
+params_parser = argparse.ArgumentParser()
+params_parser.add_argument('--path_to_model', default='/input/model.ckpt')
+params_parser.add_argument('--path_to_images', default='/input/images/')
+params_parser.add_argument('--content', default='cat.jpg', help='name of the content image')
+params_parser.add_argument('--style', default='picasso.jpg', help='name of the style image')
+params_parser.add_argument('--from_content', type=bool, default=True,
+                           help='style transfer starts from the content image or from a random image')
+params_parser.add_argument('--learning_rate', type=float, default=5.0)
+params_parser.add_argument('--content_style_balance', type=float, default=1.0,
+                           help='default balance between content and style intensity')
+params_parser.add_argument('--max_img_size', type=int, default=500,
+                           help='maximal allowed height and width of the image'),
+params_parser.add_argument('--number_of_iterations', type=int, default=2500)
+
+params = params_parser.parse_args()
+
 # Definition of an action.
-content_style_balance = ctx.params.content_style_balance
+content_style_balance = params.content_style_balance
 def _change_content_style_balance_handler(csb):
     global content_style_balance
     content_style_balance = csb
@@ -121,7 +139,7 @@ def get_stats(content, style):
     stats = {}
 
     with tf.Session() as sess:
-        vgg16.restore(sess, ctx.params.path_to_model)
+        vgg16.restore(sess, params.path_to_model)
         stats['content_stats'] = sess.run(conv4_2, feed_dict={inputs: content})
         stats['style_stats1']  = sess.run(gram_matrix(conv1_1), feed_dict={inputs: style})
         stats['style_stats2']  = sess.run(gram_matrix(conv2_1), feed_dict={inputs: style})
@@ -138,7 +156,7 @@ def get_stats(content, style):
 def transfer_style(stats, img):
     tf.reset_default_graph()
 
-    if ctx.params.from_content:
+    if params.from_content:
         initial_image = img
     else:
         initial_image = tf.truncated_normal(img.shape, mean=0., stddev=1, dtype=tf.float32, seed=None)
@@ -181,16 +199,16 @@ def transfer_style(stats, img):
 
     loss = 2 * (content_style_balance_param * loss_content + loss_style) / (1.0 + content_style_balance_param)
 
-    train_op = tf.train.AdamOptimizer(ctx.params.learning_rate).minimize(loss, var_list=[image])
+    train_op = tf.train.AdamOptimizer(params.learning_rate).minimize(loss, var_list=[image])
     vgg16 = tf.train.Saver(tf.global_variables()[1:27])
 
     cfg = tf.ConfigProto(log_device_placement=False, allow_soft_placement=True)
 
     with tf.Session(config=cfg) as sess:
         sess.run(tf.global_variables_initializer())
-        vgg16.restore(sess, ctx.params.path_to_model)
+        vgg16.restore(sess, params.path_to_model)
 
-        for step in xrange(ctx.params.number_of_iterations):
+        for step in xrange(params.number_of_iterations):
             _, l, ls, lc = sess.run(
                 [train_op, loss, loss_style, loss_content],
                 feed_dict={content_style_balance_param: content_style_balance})
@@ -213,9 +231,9 @@ def transfer_style(stats, img):
 
 def main():
     content, style = read_images(
-        ctx.params.path_to_images + ctx.params.content,
-        ctx.params.path_to_images + ctx.params.style,
-        ctx.params.max_img_size)
+        params.path_to_images + params.content,
+        params.path_to_images + params.style,
+        params.max_img_size)
 
     stats = get_stats(content, style)
     transfer_style(stats, content)
