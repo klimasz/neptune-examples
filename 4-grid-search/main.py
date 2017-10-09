@@ -23,4 +23,4 @@ model = ensemble.RandomForestRegressor(
 
 model.fit(X_train, y_train)
 mse = np.mean((model.predict(X_test) - y_test) ** 2)
-ctx.job.channel_send('mse', mse)
+ctx.channel_send('mse', mse)
