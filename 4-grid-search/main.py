@@ -8,8 +8,8 @@ import numpy as np
 ctx = neptune.Context()
 
 params_parser = argparse.ArgumentParser()
-params_parser.add_argument('--max_depth', type=float, default=8)
-params_parser.add_argument('--n_estimators', type=float, default=4)
+params_parser.add_argument('--max_depth', type=int, default=8)
+params_parser.add_argument('--n_estimators', type=int, default=4)
 
 params = params_parser.parse_args()
 
@@ -18,8 +18,8 @@ diabetes = datasets.load_diabetes()
 (y_train, y_test) = (diabetes.target[:-100], diabetes.target[-100:])
 
 model = ensemble.RandomForestRegressor(
-  n_estimators=int(params.n_estimators),
-  max_depth=int(params.max_depth))
+  n_estimators=params.n_estimators,
+  max_depth=params.max_depth)
 
 model.fit(X_train, y_train)
 mse = np.mean((model.predict(X_test) - y_test) ** 2)
