@@ -31,7 +31,7 @@ def _change_content_style_balance_handler(csb):
     global content_style_balance
     content_style_balance = csb
     return True
-ctx.job.register_action(name='Change content/style balance', handler=_change_content_style_balance_handler)
+ctx.register_action(name='Change content/style balance', handler=_change_content_style_balance_handler)
 
 
 def pil_to_arr(img):
@@ -214,14 +214,14 @@ def transfer_style(stats, img):
                 feed_dict={content_style_balance_param: content_style_balance})
 
             if step % 10 == 0:
-                ctx.job.channel_send('loss', step, l)
-                ctx.job.channel_send('loss style', step, ls)
-                ctx.job.channel_send('loss content', step, lc)
-                ctx.job.channel_send('content/style balance', step, content_style_balance)
+                ctx.channel_send('loss', step, l)
+                ctx.channel_send('loss style', step, ls)
+                ctx.channel_send('loss content', step, lc)
+                ctx.channel_send('content/style balance', step, content_style_balance)
 
                 retrieved = retrieve(sess.run(image))
                 retrieved.thumbnail((300, 300), Image.ANTIALIAS)
-                ctx.job.channel_send(
+                ctx.channel_send(
                     'image_channel', step,
                     neptune.Image(name=step, description=step, data=retrieved))
 

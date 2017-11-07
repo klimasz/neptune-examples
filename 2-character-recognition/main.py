@@ -30,10 +30,10 @@ class NeptuneCallback(Callback):
         self.epoch_id += 1
 
         # logging numeric channels
-        ctx.job.channel_send('Log-loss training', self.epoch_id, logs['loss'])
-        ctx.job.channel_send('Log-loss validation', self.epoch_id, logs['val_loss'])
-        ctx.job.channel_send('Accuracy training', self.epoch_id, logs['acc'])
-        ctx.job.channel_send('Accuracy validation', self.epoch_id, logs['val_acc'])
+        ctx.channel_send('Log-loss training', self.epoch_id, logs['loss'])
+        ctx.channel_send('Log-loss validation', self.epoch_id, logs['val_loss'])
+        ctx.channel_send('Accuracy training', self.epoch_id, logs['acc'])
+        ctx.channel_send('Accuracy validation', self.epoch_id, logs['val_acc'])
 
         # Predict the digits for images of the test set.
         validation_predictions = model.predict_classes(X_test)
@@ -47,7 +47,7 @@ class NeptuneCallback(Callback):
                     break
                 image_per_epoch += 1
 
-                ctx.job.channel_send('false_predictions', neptune.Image(
+                ctx.channel_send('false_predictions', neptune.Image(
                     name='[{}] pred: {} true: {}'.format(self.epoch_id, letters[prediction], letters[actual]),
                     description="\n".join([
                         "{} {:5.1f}% {}".format(letters[i], 100 * score, "!!!" if i == actual else "")
